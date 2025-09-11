@@ -6,6 +6,7 @@ import (
 	"github.com/golang/protobuf/proto"
 	"github.com/gorilla/websocket"
 	"github.com/zehongyang/bee/logger"
+	"log"
 	"net/http"
 	"sync"
 	"time"
@@ -153,6 +154,7 @@ func NewWebSocketServer(options ...OptionFun) *WebSocketServer {
 
 func (s *WebSocketServer) Run(addr, wsPath string) error {
 	http.HandleFunc(wsPath, s.serveWs)
+	log.Println("websocket running on addr", addr)
 	return http.ListenAndServe(addr, nil)
 }
 
@@ -205,4 +207,12 @@ func (s *WebSocketServer) handle(conn *websocket.Conn) {
 			}
 		}
 	}
+}
+
+func (s *WebSocketServer) Register(fid int64, h Handler) {
+	s.handler.handlers[fid] = h
+}
+
+func (s *WebSocketServer) RegisterLocal(fid int64, h Handler) {
+	s.handler.local[fid] = h
 }

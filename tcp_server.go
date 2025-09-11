@@ -423,7 +423,7 @@ func (s *TcpServer) Run(addr string) error {
 			return err
 		}
 	}
-	log.Println("tcp server listening on :", addr)
+	log.Println("tcp server listening on", addr)
 	defer s.listener.Close()
 	for {
 		conn, err := s.listener.Accept()
@@ -471,4 +471,12 @@ func (s *TcpServer) serve(conn net.Conn) {
 			}
 		}
 	}
+}
+
+func (s *TcpServer) Register(fid int64, h Handler) {
+	s.handler.handlers[fid] = h
+}
+
+func (s *TcpServer) RegisterLocal(fid int64, h Handler) {
+	s.handler.local[fid] = h
 }
