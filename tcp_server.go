@@ -269,6 +269,14 @@ func (t *TcpContext) GetHeader(key string) string {
 	return ""
 }
 
+func (t *TcpContext) BindHeader(obj any) error {
+	return nil
+}
+
+func (t *TcpContext) BindUri(obj any) error {
+	return nil
+}
+
 type SessionManager struct {
 	buckets []*SessionBucket
 }

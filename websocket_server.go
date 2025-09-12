@@ -129,6 +129,14 @@ func (c *WebSocketContext) GetHeader(key string) string {
 	return ""
 }
 
+func (c *WebSocketContext) BindHeader(obj any) error {
+	return nil
+}
+
+func (c *WebSocketContext) BindUri(obj any) error {
+	return nil
+}
+
 type WebSocketServer struct {
 	opts     *SocketOptions
 	sm       *SessionManager

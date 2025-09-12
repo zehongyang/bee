@@ -22,4 +22,6 @@ type IContext interface {
 	SetAccount(account AccountInfo)
 	GetHeader(key string) string
 	SetHeader(key, value string)
+	BindHeader(obj any) error
+	BindUri(obj any) error
 }

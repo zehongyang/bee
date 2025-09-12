@@ -87,6 +87,14 @@ func (c *HttpContext) GetHeader(key string) string {
 	return c.ctx.GetHeader(key)
 }
 
+func (c *HttpContext) BindHeader(obj any) error {
+	return c.ctx.BindHeader(obj)
+}
+
+func (c *HttpContext) BindUri(obj any) error {
+	return c.ctx.BindUri(obj)
+}
+
 type HttpServer struct {
 	engine *gin.Engine
 }
