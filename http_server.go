@@ -37,7 +37,6 @@ func (c *HttpContext) ResponseOk(obj any) {
 		switch c.ctx.ContentType() {
 		default:
 			data, err = json.Marshal(obj)
-			contentType = binding.MIMEJSON
 		case binding.MIMEPROTOBUF:
 			contentType = binding.MIMEPROTOBUF
 			message, ok := obj.(proto.Message)

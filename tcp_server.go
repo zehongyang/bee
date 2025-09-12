@@ -100,13 +100,14 @@ func (p *Package) Marshal(fid int32, code int32, data []byte) []byte {
 	if fid < 1 {
 		fid = p.Fid
 	}
-	var buf = make([]byte, len(data)+14)
+	var buf = make([]byte, len(data)+18)
 	buf[0] = byte(p.Version)
 	buf[1] = byte(p.ContentType)
 	binary.BigEndian.PutUint32(buf[2:6], uint32(fid))
-	binary.BigEndian.PutUint32(buf[6:10], uint32(code))
-	binary.BigEndian.PutUint32(buf[10:14], uint32(len(data)))
-	copy(buf[14:], data)
+	binary.BigEndian.PutUint32(buf[6:10], uint32(p.Qid))
+	binary.BigEndian.PutUint32(buf[10:14], uint32(code))
+	binary.BigEndian.PutUint32(buf[14:18], uint32(len(data)))
+	copy(buf[18:], data)
 	return buf
 }
 
@@ -138,13 +139,24 @@ func (s *Session) readFromWebSocket() (*WebSocketData, error) {
 	return &wd, err
 }
 
-func (s *Session) Close() {
-	if s.uid > 0 {
+func (s *Session) Close(remove bool) {
+	if s.uid > 0 && remove {
 		s.sm.Remove(s.uid, getPlatform(s.os))
 	}
 	for _, handler := range s.handler.local {
-		var ctx TcpContext
+		var ctx = TcpContext{
+			ctx:     context.Background(),
+			session: s,
+		}
 		handler(&ctx)
+	}
+	if s.wsConn != nil {
+		s.wsConn.Close()
+		return
+	}
+	if s.conn != nil {
+		s.conn.Close()
+		return
 	}
 }
 
@@ -285,7 +297,7 @@ var NewSessionManager = utils.Single(func() *SessionManager {
 	var size = 128
 	var buckets = make([]*SessionBucket, size)
 	for i := 0; i < size; i++ {
-		buckets[i] = &SessionBucket{mp: make(map[int64][2]*Session)}
+		buckets[i] = &SessionBucket{mp: make(map[int64][]*Session)}
 	}
 	return &SessionManager{buckets: buckets}
 })
@@ -296,9 +308,11 @@ func (m *SessionManager) Insert(ses *Session) *Session {
 	bucket := m.buckets[idx]
 	bucket.mu.Lock()
 	defer bucket.mu.Unlock()
+	if len(bucket.mp[ses.uid]) < 1 {
+		bucket.mp[ses.uid] = make([]*Session, 2)
+	}
 	old := bucket.mp[ses.uid][platform]
-	arr := bucket.mp[ses.uid]
-	arr[platform] = ses
+	bucket.mp[ses.uid][platform] = ses
 	return old
 }
 
@@ -308,8 +322,15 @@ func (m *SessionManager) RemoveAll(uid int64) []*Session {
 	bucket.mu.Lock()
 	defer bucket.mu.Unlock()
 	ses := bucket.mp[uid]
-	bucket.mp[uid] = [2]*Session{}
+	delete(bucket.mp, uid)
 	return ses[:]
+}
+
+func (m *SessionManager) CloseAll(uid int64) {
+	ses := m.RemoveAll(uid)
+	for _, se := range ses {
+		se.Close(false)
+	}
 }
 
 func (m *SessionManager) Remove(uid int64, platform Platform) *Session {
@@ -317,9 +338,20 @@ func (m *SessionManager) Remove(uid int64, platform Platform) *Session {
 	bucket := m.buckets[idx]
 	bucket.mu.Lock()
 	defer bucket.mu.Unlock()
-	arr := bucket.mp[uid]
-	ses := arr[platform]
-	arr[platform] = nil
+	if len(bucket.mp[uid]) < 1 {
+		return nil
+	}
+	ses := bucket.mp[uid][platform]
+	bucket.mp[uid][platform] = nil
+	var del = true
+	for _, s := range bucket.mp[uid] {
+		if s != nil {
+			del = false
+		}
+	}
+	if del {
+		delete(bucket.mp, uid)
+	}
 	return ses
 }
 
@@ -329,6 +361,9 @@ func (m *SessionManager) Get(uid int64, os ClientOs) *Session {
 	bucket := m.buckets[idx]
 	bucket.mu.RLock()
 	defer bucket.mu.RUnlock()
+	if len(bucket.mp[uid]) < 1 {
+		return nil
+	}
 	return bucket.mp[uid][platform]
 }
 
@@ -337,6 +372,9 @@ func (m *SessionManager) GetAll(uid int64) []*Session {
 	bucket := m.buckets[idx]
 	bucket.mu.RLock()
 	defer bucket.mu.RUnlock()
+	if len(bucket.mp[uid]) < 1 {
+		return nil
+	}
 	ses := bucket.mp[uid]
 	return ses[:]
 }
@@ -345,8 +383,6 @@ func getPlatform(os ClientOs) Platform {
 	switch os {
 	default:
 		return PlatformMobile
-	case ClientAndroid, ClientIos:
-		return PlatformMobile
 	case ClientWindows, ClientMac:
 		return PlatformDesktop
 	}
@@ -354,7 +390,7 @@ func getPlatform(os ClientOs) Platform {
 
 type SessionBucket struct {
 	mu sync.RWMutex
-	mp map[int64][2]*Session
+	mp map[int64][]*Session
 }
 
 type TcpServer struct {
@@ -414,7 +450,7 @@ func WithCert(certFile string, keyFile string) OptionFun {
 	}
 }
 
-func NewTcpServer(bucketSize int, options ...OptionFun) *TcpServer {
+func NewTcpServer(options ...OptionFun) *TcpServer {
 	var op SocketOptions
 	if len(options) > 0 {
 		for _, opFun := range options {
@@ -431,6 +467,10 @@ func NewTcpServer(bucketSize int, options ...OptionFun) *TcpServer {
 
 func (s *TcpServer) Run(addr string) error {
 	var err error
+	err = s.options.init()
+	if err != nil {
+		return err
+	}
 	if s.options.cert == nil {
 		s.listener, err = net.Listen("tcp", addr)
 		if err != nil {
@@ -461,7 +501,7 @@ func (s *TcpServer) serve(conn net.Conn) {
 		handler:      s.handler,
 		sm:           s.sm,
 	}
-	defer ses.Close()
+	defer ses.Close(true)
 	for {
 		err := ses.conn.SetReadDeadline(time.Now().Add(s.options.readTimeout))
 		if err != nil {
@@ -474,7 +514,7 @@ func (s *TcpServer) serve(conn net.Conn) {
 			return
 		}
 		if pkg != nil {
-			handler, ok := ses.handler.handlers[int64(pkg.Fid)]
+			handler, ok := s.handler.handlers[int64(pkg.Fid)]
 			if !ok {
 				logger.Error().Any("fid", pkg.Fid).Msg("not found handler")
 			} else {

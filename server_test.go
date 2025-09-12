@@ -7,6 +7,10 @@ import (
 func TestSessionManager(t *testing.T) {
 	sm := NewSessionManager()
 	t.Log(sm)
-	var mp = make(map[int64][2]*Session)
+	var mp = make(map[int64][]*Session)
+	mp[1] = make([]*Session, 2)
+	t.Log(mp[1])
+	arr := mp[1]
+	arr[0] = &Session{uid: 1}
 	t.Log(mp[1])
 }

@@ -197,7 +197,7 @@ func (s *WebSocketServer) handle(conn *websocket.Conn) {
 		handler:      s.handler,
 		wsConn:       conn,
 	}
-	defer ses.Close()
+	defer ses.Close(true)
 	var err error
 	for {
 		err = ses.wsConn.SetReadDeadline(time.Now().Add(s.opts.readTimeout))
