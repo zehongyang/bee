@@ -20,4 +20,6 @@ type IContext interface {
 	Next()
 	AbortWithStatus(code int)
 	SetAccount(account AccountInfo)
+	GetHeader(key string) string
+	SetHeader(key, value string)
 }

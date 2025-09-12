@@ -261,6 +261,14 @@ func (t *TcpContext) SetAccount(account AccountInfo) {
 	t.session.uid = int64(account.Uid)
 }
 
+func (t *TcpContext) SetHeader(key, value string) {
+	return
+}
+
+func (t *TcpContext) GetHeader(key string) string {
+	return ""
+}
+
 type SessionManager struct {
 	buckets []*SessionBucket
 }
@@ -346,6 +354,7 @@ type TcpServer struct {
 	options  *SocketOptions
 	sm       *SessionManager
 	handler  *socketHandler
+	pool     *sync.Pool
 }
 
 type socketHandler struct {
@@ -407,7 +416,9 @@ func NewTcpServer(bucketSize int, options ...OptionFun) *TcpServer {
 	var handler socketHandler
 	handler.handlers = make(map[int64]Handler)
 	handler.local = make(map[int64]Handler)
-	return &TcpServer{options: &op, sm: NewSessionManager(), handler: &handler}
+	return &TcpServer{options: &op, sm: NewSessionManager(), handler: &handler, pool: &sync.Pool{New: func() interface{} {
+		return &TcpContext{}
+	}}}
 }
 
 func (s *TcpServer) Run(addr string) error {
@@ -460,13 +471,17 @@ func (s *TcpServer) serve(conn net.Conn) {
 				logger.Error().Any("fid", pkg.Fid).Msg("not found handler")
 			} else {
 				go func() {
+					tc := s.pool.Get()
+					tcpContext := tc.(*TcpContext)
 					ctx, cancel := context.WithCancel(context.Background())
-					defer cancel()
-					handler(&TcpContext{
-						ctx:     ctx,
-						session: &ses,
-						pkg:     pkg,
-					})
+					defer func() {
+						cancel()
+						s.pool.Put(tcpContext)
+					}()
+					tcpContext.ctx = ctx
+					tcpContext.session = &ses
+					tcpContext.pkg = pkg
+					handler(tcpContext)
 				}()
 			}
 		}

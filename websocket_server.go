@@ -121,11 +121,20 @@ func (c *WebSocketContext) SetAccount(account AccountInfo) {
 	c.session.uid = int64(account.Uid)
 }
 
+func (c *WebSocketContext) SetHeader(key, value string) {
+	return
+}
+
+func (c *WebSocketContext) GetHeader(key string) string {
+	return ""
+}
+
 type WebSocketServer struct {
 	opts     *SocketOptions
 	sm       *SessionManager
 	handler  *socketHandler
 	upgrader *websocket.Upgrader
+	pool     *sync.Pool
 }
 
 func NewWebSocketServer(options ...OptionFun) *WebSocketServer {
@@ -145,11 +154,14 @@ func NewWebSocketServer(options ...OptionFun) *WebSocketServer {
 		handlers: make(map[int64]Handler),
 		local:    make(map[int64]Handler),
 	}
-	return &WebSocketServer{opts: &opts, sm: NewSessionManager(), handler: hd, upgrader: &websocket.Upgrader{
-		CheckOrigin: func(r *http.Request) bool {
-			return true
-		},
-	}}
+	return &WebSocketServer{opts: &opts, sm: NewSessionManager(), handler: hd,
+		upgrader: &websocket.Upgrader{
+			CheckOrigin: func(r *http.Request) bool {
+				return true
+			},
+		}, pool: &sync.Pool{New: func() interface{} {
+			return &WebSocketContext{}
+		}}}
 }
 
 func (s *WebSocketServer) Run(addr, wsPath string) error {
@@ -194,13 +206,17 @@ func (s *WebSocketServer) handle(conn *websocket.Conn) {
 			hd, ok := s.handler.handlers[int64(wd.Fid)]
 			if ok {
 				go func() {
+					wc := s.pool.Get()
+					webCtx := wc.(*WebSocketContext)
 					ctx, cancel := context.WithCancel(context.Background())
-					defer cancel()
-					hd(&WebSocketContext{
-						ctx:     ctx,
-						session: ses,
-						data:    wd,
-					})
+					defer func() {
+						cancel()
+						s.pool.Put(webCtx)
+					}()
+					webCtx.ctx = ctx
+					webCtx.session = ses
+					webCtx.data = wd
+					hd(webCtx)
 				}()
 			} else {
 				logger.Error().Err(err).Any("uid", ses.uid).Msg("not found handler")

@@ -79,6 +79,14 @@ func (c *HttpContext) SetAccount(account AccountInfo) {
 	c.ctx.Set(AccountInfoKey, &account)
 }
 
+func (c *HttpContext) SetHeader(key, value string) {
+	c.ctx.Header(key, value)
+}
+
+func (c *HttpContext) GetHeader(key string) string {
+	return c.ctx.GetHeader(key)
+}
+
 type HttpServer struct {
 	engine *gin.Engine
 }
