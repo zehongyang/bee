@@ -14,6 +14,7 @@ import (
 	"net"
 	"net/http"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -122,6 +123,7 @@ type Session struct {
 	sm           *SessionManager
 	handler      *socketHandler
 	wsConn       *websocket.Conn
+	curState     atomic.Int64
 }
 
 func (s *Session) readFromTcp() (*Package, error) {
@@ -185,6 +187,15 @@ func (s *Session) WriteEvent(fid int32, contentType ContentType, data []byte) (i
 	}
 	wd := pkg.Marshal(fid, pkg.Code, data)
 	return s.Write(wd)
+}
+
+func (s *Session) setState(state connState) {
+	s.curState.Store(time.Now().Unix()<<8 | int64(state))
+}
+
+func (s *Session) getState() (connState, int64) {
+	state := s.curState.Load()
+	return connState(state & 0xFF), state >> 8
 }
 
 var _ IContext = (*TcpContext)(nil)
@@ -399,6 +410,9 @@ type TcpServer struct {
 	sm       *SessionManager
 	handler  *socketHandler
 	pool     *sync.Pool
+	mu       sync.Mutex
+	conns    map[*Session]struct{}
+	shutDown bool
 }
 
 type socketHandler struct {
@@ -460,9 +474,10 @@ func NewTcpServer(options ...OptionFun) *TcpServer {
 	var handler socketHandler
 	handler.handlers = make(map[int64]Handler)
 	handler.local = make(map[int64]Handler)
-	return &TcpServer{options: &op, sm: NewSessionManager(), handler: &handler, pool: &sync.Pool{New: func() interface{} {
-		return &TcpContext{}
-	}}}
+	return &TcpServer{options: &op, sm: NewSessionManager(), conns: make(map[*Session]struct{}),
+		handler: &handler, pool: &sync.Pool{New: func() interface{} {
+			return &TcpContext{}
+		}}}
 }
 
 func (s *TcpServer) Run(addr string) error {
@@ -494,7 +509,7 @@ func (s *TcpServer) Run(addr string) error {
 }
 
 func (s *TcpServer) serve(conn net.Conn) {
-	var ses = Session{
+	var ses = &Session{
 		conn:         conn,
 		readTimeout:  s.options.readTimeout,
 		writeTimeout: s.options.writeTimeout,
@@ -502,6 +517,10 @@ func (s *TcpServer) serve(conn net.Conn) {
 		sm:           s.sm,
 	}
 	defer ses.Close(true)
+	s.mu.Lock()
+	s.conns[ses] = struct{}{}
+	s.mu.Unlock()
+	ses.setState(connStateNew)
 	for {
 		err := ses.conn.SetReadDeadline(time.Now().Add(s.options.readTimeout))
 		if err != nil {
@@ -513,24 +532,20 @@ func (s *TcpServer) serve(conn net.Conn) {
 			logger.Debug().Err(err).Msg("read data")
 			return
 		}
-		if pkg != nil {
+		if pkg != nil && !s.shutDown {
 			handler, ok := s.handler.handlers[int64(pkg.Fid)]
 			if !ok {
 				logger.Error().Any("fid", pkg.Fid).Msg("not found handler")
 			} else {
-				go func() {
-					tc := s.pool.Get()
-					tcpContext := tc.(*TcpContext)
-					ctx, cancel := context.WithCancel(context.Background())
-					defer func() {
-						cancel()
-						s.pool.Put(tcpContext)
-					}()
-					tcpContext.ctx = ctx
-					tcpContext.session = &ses
-					tcpContext.pkg = pkg
-					handler(tcpContext)
-				}()
+				tc := s.pool.Get()
+				tcpContext := tc.(*TcpContext)
+				tcpContext.ctx = context.Background()
+				tcpContext.session = ses
+				tcpContext.pkg = pkg
+				ses.setState(connStateActive)
+				handler(tcpContext)
+				ses.setState(connStateIdle)
+				s.pool.Put(tcpContext)
 			}
 		}
 	}
@@ -542,4 +557,42 @@ func (s *TcpServer) Register(fid int64, h Handler) {
 
 func (s *TcpServer) RegisterLocal(fid int64, h Handler) {
 	s.handler.local[fid] = h
+}
+
+func (s *TcpServer) Shutdown() {
+	err := s.listener.Close()
+	if err != nil {
+		logger.Error().Err(err).Msg("tcp server shutdown")
+	}
+	s.shutDown = true
+	ctx, cancelFunc := context.WithDeadline(context.Background(), time.Now().Add(time.Second*5))
+	defer cancelFunc()
+	err = s.closeIdle(ctx)
+	if err != nil {
+		logger.Error().Err(err).Msg("tcp server shutdown")
+	}
+}
+
+func (s *TcpServer) closeIdle(ctx context.Context) error {
+	for {
+		var finished = true
+		s.mu.Lock()
+		for ses, _ := range s.conns {
+			state, _ := ses.getState()
+			if state == connStateActive {
+				finished = false
+				continue
+			}
+			ses.Close(true)
+			delete(s.conns, ses)
+		}
+		s.mu.Unlock()
+		if finished {
+			return nil
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}
 }

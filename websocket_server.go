@@ -143,6 +143,9 @@ type WebSocketServer struct {
 	handler  *socketHandler
 	upgrader *websocket.Upgrader
 	pool     *sync.Pool
+	mu       sync.Mutex
+	conns    map[*Session]struct{}
+	shutDown bool
 }
 
 func NewWebSocketServer(options ...OptionFun) *WebSocketServer {
@@ -162,7 +165,7 @@ func NewWebSocketServer(options ...OptionFun) *WebSocketServer {
 		handlers: make(map[int64]Handler),
 		local:    make(map[int64]Handler),
 	}
-	return &WebSocketServer{opts: &opts, sm: NewSessionManager(), handler: hd,
+	return &WebSocketServer{opts: &opts, sm: NewSessionManager(), conns: map[*Session]struct{}{}, handler: hd,
 		upgrader: &websocket.Upgrader{
 			CheckOrigin: func(r *http.Request) bool {
 				return true
@@ -179,6 +182,10 @@ func (s *WebSocketServer) Run(addr, wsPath string) error {
 }
 
 func (s *WebSocketServer) serveWs(w http.ResponseWriter, r *http.Request) {
+	if s.shutDown {
+		logger.Info().Msg("websocket server is shutting down")
+		return
+	}
 	conn, err := s.upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		logger.Error().Err(err).Msg("serveWs")
@@ -198,6 +205,10 @@ func (s *WebSocketServer) handle(conn *websocket.Conn) {
 		wsConn:       conn,
 	}
 	defer ses.Close(true)
+	s.mu.Lock()
+	s.conns[ses] = struct{}{}
+	s.mu.Unlock()
+	ses.setState(connStateNew)
 	var err error
 	for {
 		err = ses.wsConn.SetReadDeadline(time.Now().Add(s.opts.readTimeout))
@@ -210,22 +221,18 @@ func (s *WebSocketServer) handle(conn *websocket.Conn) {
 			logger.Error().Err(err).Any("uid", ses.uid).Msg("handleWs")
 			return
 		}
-		if wd != nil {
+		if wd != nil && !s.shutDown {
 			hd, ok := s.handler.handlers[int64(wd.Fid)]
 			if ok {
-				go func() {
-					wc := s.pool.Get()
-					webCtx := wc.(*WebSocketContext)
-					ctx, cancel := context.WithCancel(context.Background())
-					defer func() {
-						cancel()
-						s.pool.Put(webCtx)
-					}()
-					webCtx.ctx = ctx
-					webCtx.session = ses
-					webCtx.data = wd
-					hd(webCtx)
-				}()
+				wc := s.pool.Get()
+				webCtx := wc.(*WebSocketContext)
+				webCtx.ctx = context.Background()
+				webCtx.session = ses
+				webCtx.data = wd
+				ses.setState(connStateActive)
+				hd(webCtx)
+				ses.setState(connStateIdle)
+				s.pool.Put(webCtx)
 			} else {
 				logger.Error().Err(err).Any("uid", ses.uid).Msg("not found handler")
 			}
@@ -239,4 +246,38 @@ func (s *WebSocketServer) Register(fid int64, h Handler) {
 
 func (s *WebSocketServer) RegisterLocal(fid int64, h Handler) {
 	s.handler.local[fid] = h
+}
+
+func (s *WebSocketServer) Shutdown() {
+	s.shutDown = true
+	ctx, cancelFunc := context.WithDeadline(context.Background(), time.Now().Add(time.Second*5))
+	defer cancelFunc()
+	err := s.closeIdle(ctx)
+	if err != nil {
+		logger.Error().Err(err).Msg("tcp server shutdown")
+	}
+}
+
+func (s *WebSocketServer) closeIdle(ctx context.Context) error {
+	for {
+		var finished = true
+		s.mu.Lock()
+		for ses, _ := range s.conns {
+			state, _ := ses.getState()
+			if state == connStateActive {
+				finished = false
+				continue
+			}
+			ses.Close(true)
+			delete(s.conns, ses)
+		}
+		s.mu.Unlock()
+		if finished {
+			return nil
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}
 }

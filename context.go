@@ -1,9 +1,14 @@
 package bee
 
+type connState int
+
 const (
-	HeaderCode     = "Code"
-	HeaderError    = "Error"
-	AccountInfoKey = "Account"
+	HeaderCode                = "Code"
+	HeaderError               = "Error"
+	AccountInfoKey            = "Account"
+	connStateNew    connState = 1
+	connStateActive connState = 2
+	connStateIdle   connState = 3
 )
 
 type AccountInfo struct {
