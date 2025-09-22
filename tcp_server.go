@@ -516,7 +516,13 @@ func (s *TcpServer) serve(conn net.Conn) {
 		handler:      s.handler,
 		sm:           s.sm,
 	}
-	defer ses.Close(true)
+	defer func() {
+		ses.Close(true)
+		if err := recover(); err != nil {
+			stack := utils.Stack(2)
+			logger.Error().Str("stack", string(stack)).Msg("TcpServer serve")
+		}
+	}()
 	s.mu.Lock()
 	s.conns[ses] = struct{}{}
 	s.mu.Unlock()

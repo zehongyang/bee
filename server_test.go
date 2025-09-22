@@ -1,6 +1,7 @@
 package bee
 
 import (
+	"github.com/zehongyang/bee/utils"
 	"testing"
 )
 
@@ -13,4 +14,8 @@ func TestSessionManager(t *testing.T) {
 	arr := mp[1]
 	arr[0] = &Session{uid: 1}
 	t.Log(mp[1])
+}
+
+func TestStack(t *testing.T) {
+	t.Log(string(utils.Stack(1)))
 }

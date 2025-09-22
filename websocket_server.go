@@ -6,6 +6,7 @@ import (
 	"github.com/golang/protobuf/proto"
 	"github.com/gorilla/websocket"
 	"github.com/zehongyang/bee/logger"
+	"github.com/zehongyang/bee/utils"
 	"log"
 	"net/http"
 	"sync"
@@ -204,7 +205,13 @@ func (s *WebSocketServer) handle(conn *websocket.Conn) {
 		handler:      s.handler,
 		wsConn:       conn,
 	}
-	defer ses.Close(true)
+	defer func() {
+		ses.Close(true)
+		if err := recover(); err != nil {
+			stack := utils.Stack(2)
+			logger.Error().Str("stack", string(stack)).Msg("WebSocketServer serve")
+		}
+	}()
 	s.mu.Lock()
 	s.conns[ses] = struct{}{}
 	s.mu.Unlock()
