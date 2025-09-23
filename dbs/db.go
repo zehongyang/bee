@@ -128,6 +128,8 @@ func Get(tableName string) *SplitTable {
 		}
 		globalDBS.engines[st.DBName] = egn
 	}
-	st.engine = egn
+	if st.engine == nil {
+		st.engine = egn
+	}
 	return st
 }
