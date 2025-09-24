@@ -69,6 +69,10 @@ func (s *SplitTable) String(str string) *xorm.Session {
 	return s.engine.Table(s.getTable(int64(sum64)))
 }
 
+func (s *SplitTable) GetEngine() *xorm.Engine {
+	return s.engine
+}
+
 func (s *SplitTable) getTable(num int64) string {
 	if s.Nums <= 1 {
 		return s.TableName
