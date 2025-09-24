@@ -23,15 +23,16 @@ func (tr TransactionRunner) Add(to TransactionOrder) {
 
 func (tr TransactionRunner) Run(db *xorm.Engine) error {
 	tr.sort()
-	ses := db.NewSession()
-	defer ses.Close()
-	for _, to := range tr.Orders {
-		err := to.Func(ses)
-		if err != nil {
-			return err
+	_, err := db.Transaction(func(ses *xorm.Session) (interface{}, error) {
+		for _, to := range tr.Orders {
+			err := to.Func(ses)
+			if err != nil {
+				return nil, err
+			}
 		}
-	}
-	return nil
+		return nil, nil
+	})
+	return err
 }
 
 func (tr TransactionRunner) sort() {
