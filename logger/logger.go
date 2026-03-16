@@ -1,11 +1,12 @@
 package logger
 
 import (
+	"os"
+	"time"
+
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 	"github.com/zehongyang/bee/config"
-	"os"
-	"time"
 )
 
 var logger = newLogger()
@@ -29,7 +30,7 @@ func newLogger() zerolog.Logger {
 	if err != nil {
 		tl.Fatal().Msg(err.Error())
 	}
-	if lc.Logger.Writer != "console" {
+	if len(lc.Logger.Writer) > 0 && lc.Logger.Writer != "console" {
 		fn, err := os.OpenFile(lc.Logger.Writer, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0666)
 		if err != nil {
 			tl.Fatal().Msg(err.Error())
