@@ -1,6 +1,6 @@
 module github.com/zehongyang/bee
 
-go 1.25.3
+go 1.24.3
 
 require (
 	github.com/cespare/xxhash v1.1.0
