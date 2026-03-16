@@ -140,3 +140,7 @@ func (s *HttpServer) Use(handler Handler) {
 		})
 	})
 }
+
+func (s *HttpServer) Group(relativePath string) *gin.RouterGroup {
+	return s.engine.Group(relativePath)
+}
