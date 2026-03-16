@@ -6,9 +6,10 @@ import (
 )
 
 type TransactionOrder struct {
-	Table string
-	Id    int64
-	Func  TransactionFunc
+	Table       string
+	Id          int64
+	CustomOrder int64
+	Func        TransactionFunc
 }
 
 type TransactionFunc func(ses *xorm.Session) (err error)
@@ -37,6 +38,9 @@ func (tr TransactionRunner) Run(db *xorm.Engine) error {
 
 func (tr TransactionRunner) sort() {
 	sort.Slice(tr.Orders, func(i, j int) bool {
+		if tr.Orders[i].CustomOrder != tr.Orders[j].CustomOrder {
+			return tr.Orders[i].CustomOrder < tr.Orders[j].CustomOrder
+		}
 		if tr.Orders[i].Table != tr.Orders[j].Table {
 			return tr.Orders[i].Table < tr.Orders[j].Table
 		}

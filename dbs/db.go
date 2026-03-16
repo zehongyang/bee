@@ -10,6 +10,7 @@ import (
 	"github.com/zehongyang/bee/logger"
 	"github.com/zehongyang/bee/utils"
 	"sync"
+	"time"
 	"xorm.io/xorm"
 )
 
@@ -23,11 +24,12 @@ type DBConfig struct {
 }
 
 type DBSConfig struct {
-	Name       string
-	Driver     string
-	DataSource string
-	MaxIdle    int
-	MaxConn    int
+	Name               string
+	Driver             string
+	DataSource         string
+	MaxIdle            int
+	MaxConn            int
+	MaxLifeTimeSeconds int
 }
 
 var getDBConfig = utils.Single(func() *DBConfig {
@@ -125,6 +127,7 @@ func Get(tableName string) *SplitTable {
 		}
 		egn.SetMaxIdleConns(dbsConfig.MaxIdle)
 		egn.SetMaxOpenConns(dbsConfig.MaxConn)
+		egn.SetConnMaxLifetime(time.Second * time.Duration(dbsConfig.MaxLifeTimeSeconds))
 		err = egn.Ping()
 		if err != nil {
 			logger.Fatal().Err(err).Str("tableName", tableName).Msg("Ping failed")

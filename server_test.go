@@ -2,6 +2,7 @@ package bee
 
 import (
 	"github.com/zehongyang/bee/utils"
+	"reflect"
 	"testing"
 )
 
@@ -36,4 +37,13 @@ func TestPtr(t *testing.T) {
 	var a *int
 	t.Log(utils.Ptr(a))
 	t.Log(utils.Value(a))
+	var p *Person
+	v := reflect.ValueOf(&p).Elem()
+	if v.IsNil() {
+		elem := reflect.New(v.Type().Elem())
+		v.Set(elem)
+	}
+	idFiled := v.Elem().FieldByName("Id")
+	idFiled.SetInt(10)
+	t.Log(p)
 }
