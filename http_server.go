@@ -2,7 +2,6 @@ package bee
 
 import (
 	"encoding/json"
-	"fmt"
 	"github.com/gin-gonic/gin"
 	"github.com/gin-gonic/gin/binding"
 	"github.com/golang/protobuf/proto"
@@ -106,7 +105,7 @@ func NewHttpServer() *HttpServer {
 }
 
 func (s *HttpServer) Run(addr string) error {
-	logger.Info().Msg(fmt.Sprintf("running addr %s", addr))
+	logger.Info().Any("addr", addr).Msg("http server running")
 	return s.engine.Run(addr)
 }
 
