@@ -282,6 +282,10 @@ func (t *TcpContext) BindUri(obj any) error {
 	return nil
 }
 
+func (t *TcpContext) GetMethod() string {
+	return ""
+}
+
 type SessionManager struct {
 	buckets []*SessionBucket
 }

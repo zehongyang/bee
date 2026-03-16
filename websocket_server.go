@@ -138,6 +138,10 @@ func (c *WebSocketContext) BindUri(obj any) error {
 	return nil
 }
 
+func (c *WebSocketContext) GetMethod() string {
+	return ""
+}
+
 type WebSocketServer struct {
 	opts     *SocketOptions
 	sm       *SessionManager

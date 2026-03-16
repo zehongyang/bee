@@ -29,4 +29,5 @@ type IContext interface {
 	SetHeader(key, value string)
 	BindHeader(obj any) error
 	BindUri(obj any) error
+	GetMethod() string
 }

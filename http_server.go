@@ -98,6 +98,10 @@ func (c *HttpContext) BindUri(obj any) error {
 	return c.ctx.BindUri(obj)
 }
 
+func (c *HttpContext) GetMethod() string {
+	return c.ctx.Request.Method
+}
+
 type HttpServer struct {
 	engine *gin.Engine
 }
