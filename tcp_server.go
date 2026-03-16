@@ -5,10 +5,6 @@ import (
 	"crypto/tls"
 	"encoding/binary"
 	"encoding/json"
-	"github.com/golang/protobuf/proto"
-	"github.com/gorilla/websocket"
-	"github.com/zehongyang/bee/logger"
-	"github.com/zehongyang/bee/utils"
 	"io"
 	"log"
 	"net"
@@ -16,6 +12,11 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/golang/protobuf/proto"
+	"github.com/gorilla/websocket"
+	"github.com/zehongyang/bee/logger"
+	"github.com/zehongyang/bee/utils"
 )
 
 type Platform int
@@ -37,6 +38,7 @@ const (
 	ClientMac           ClientOs    = 4
 	defaultReadTimeout              = time.Second * 60
 	defaultWriteTimeout             = time.Second * 10
+	MaxPackageSize                  = 1 << 20
 )
 
 type Package struct {
@@ -50,50 +52,30 @@ type Package struct {
 }
 
 func (p *Package) Read(rd io.Reader) error {
-	var data = make([]byte, 1)
+	var data = make([]byte, 18)
 	_, err := io.ReadFull(rd, data)
 	if err != nil {
 		return err
 	}
 	p.Version = int8(data[0])
-	_, err = io.ReadFull(rd, data)
-	if err != nil {
-		return err
-	}
 	if p.Version != Version {
 		return ErrUnSupportVersion
 	}
-	_, err = io.ReadFull(rd, data)
-	if err != nil {
-		return err
-	}
-	p.ContentType = int8(data[0])
+	p.ContentType = int8(data[1])
 	if p.ContentType != int8(ContentTypeJson) && p.ContentType != int8(ContentTypeProtobuf) {
 		return ErrContentType
 	}
-	data = make([]byte, 4)
-	_, err = io.ReadFull(rd, data)
-	if err != nil {
-		return err
+	p.Fid = int32(binary.BigEndian.Uint32(data[2:6]))
+	p.Qid = int32(binary.BigEndian.Uint32(data[6:10]))
+	p.Code = int32(binary.BigEndian.Uint32(data[10:14]))
+	p.Length = int32(binary.BigEndian.Uint32(data[14:18]))
+	if p.Length > MaxPackageSize {
+		return ErrPackageSize
 	}
-	p.Fid = int32(binary.BigEndian.Uint32(data))
-	_, err = io.ReadFull(rd, data)
-	if err != nil {
-		return err
+	if p.Length > 0 {
+		p.Data = make([]byte, p.Length)
+		_, err = io.ReadFull(rd, p.Data)
 	}
-	p.Qid = int32(binary.BigEndian.Uint32(data))
-	_, err = io.ReadFull(rd, data)
-	if err != nil {
-		return err
-	}
-	p.Code = int32(binary.BigEndian.Uint32(data))
-	_, err = io.ReadFull(rd, data)
-	if err != nil {
-		return err
-	}
-	p.Length = int32(binary.BigEndian.Uint32(data))
-	p.Data = make([]byte, p.Length)
-	_, err = io.ReadFull(rd, p.Data)
 	return err
 }
 

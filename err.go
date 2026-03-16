@@ -7,4 +7,5 @@ var (
 	ErrPackageLength    = errors.New("package length error")
 	ErrContentType      = errors.New("content type error")
 	ErrProtoObj         = errors.New("proto obj error")
+	ErrPackageSize      = errors.New("package size error")
 )
