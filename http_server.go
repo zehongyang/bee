@@ -17,6 +17,10 @@ type HttpContext struct {
 	ctx *gin.Context
 }
 
+type RouterGroup struct {
+	*gin.RouterGroup
+}
+
 func (c *HttpContext) Bind(obj any) error {
 	return c.ctx.Bind(obj)
 }
@@ -141,6 +145,14 @@ func (s *HttpServer) Use(handler Handler) {
 	})
 }
 
-func (s *HttpServer) Group(relativePath string) *gin.RouterGroup {
-	return s.engine.Group(relativePath)
+func (s *HttpServer) Group(relativePath string) *RouterGroup {
+	return &RouterGroup{s.engine.Group(relativePath)}
+}
+
+func (s *RouterGroup) Post(relativePath string, handler Handler) {
+	s.RouterGroup.POST(relativePath, func(c *gin.Context) {
+		handler(&HttpContext{
+			ctx: c,
+		})
+	})
 }
