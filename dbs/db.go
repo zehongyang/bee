@@ -111,7 +111,7 @@ func Get(tableName string) *SplitTable {
 	}
 	var err error
 	dbConfig := getDBConfig()
-	dbsConfig, ok := dbConfig.dbMp[tableName]
+	dbsConfig, ok := dbConfig.dbMp[st.DBName]
 	if !ok {
 		logger.Fatal().Str("tableName", tableName).Msg("Get DB config failed")
 		return nil
