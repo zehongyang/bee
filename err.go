@@ -8,4 +8,5 @@ var (
 	ErrContentType      = errors.New("content type error")
 	ErrProtoObj         = errors.New("proto obj error")
 	ErrPackageSize      = errors.New("package size error")
+	ErrFileHeader       = errors.New("file header error")
 )

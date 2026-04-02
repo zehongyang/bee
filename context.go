@@ -1,5 +1,7 @@
 package bee
 
+import "mime/multipart"
+
 type connState int
 
 const (
@@ -30,4 +32,5 @@ type IContext interface {
 	BindHeader(obj any) error
 	BindUri(obj any) error
 	GetMethod() string
+	FormFile(name string) (*multipart.FileHeader, error)
 }

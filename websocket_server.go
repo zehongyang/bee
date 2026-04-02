@@ -8,6 +8,7 @@ import (
 	"github.com/zehongyang/bee/logger"
 	"github.com/zehongyang/bee/utils"
 	"log"
+	"mime/multipart"
 	"net/http"
 	"sync"
 	"time"
@@ -140,6 +141,10 @@ func (c *WebSocketContext) BindUri(obj any) error {
 
 func (c *WebSocketContext) GetMethod() string {
 	return ""
+}
+
+func (c *WebSocketContext) FormFile(name string) (*multipart.FileHeader, error) {
+	return nil, nil
 }
 
 type WebSocketServer struct {

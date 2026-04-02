@@ -6,6 +6,7 @@ import (
 	"github.com/gin-gonic/gin/binding"
 	"github.com/golang/protobuf/proto"
 	"github.com/zehongyang/bee/logger"
+	"mime/multipart"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -100,6 +101,10 @@ func (c *HttpContext) BindUri(obj any) error {
 
 func (c *HttpContext) GetMethod() string {
 	return c.ctx.Request.Method
+}
+
+func (c *HttpContext) FormFile(name string) (*multipart.FileHeader, error) {
+	return c.ctx.FormFile(name)
 }
 
 type HttpServer struct {

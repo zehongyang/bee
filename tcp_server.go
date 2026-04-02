@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"io"
 	"log"
+	"mime/multipart"
 	"net"
 	"net/http"
 	"sync"
@@ -284,6 +285,10 @@ func (t *TcpContext) BindUri(obj any) error {
 
 func (t *TcpContext) GetMethod() string {
 	return ""
+}
+
+func (t *TcpContext) FormFile(name string) (*multipart.FileHeader, error) {
+	return nil, nil
 }
 
 type SessionManager struct {
