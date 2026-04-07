@@ -291,6 +291,10 @@ func (t *TcpContext) FormFile(name string) (*multipart.FileHeader, error) {
 	return nil, nil
 }
 
+func (t *TcpContext) GetIp() string {
+	return ""
+}
+
 type SessionManager struct {
 	buckets []*SessionBucket
 }

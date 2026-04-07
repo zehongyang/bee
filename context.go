@@ -33,4 +33,5 @@ type IContext interface {
 	BindUri(obj any) error
 	GetMethod() string
 	FormFile(name string) (*multipart.FileHeader, error)
+	GetIp() string
 }

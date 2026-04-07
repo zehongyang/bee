@@ -107,6 +107,10 @@ func (c *HttpContext) FormFile(name string) (*multipart.FileHeader, error) {
 	return c.ctx.FormFile(name)
 }
 
+func (c *HttpContext) GetIp() string {
+	return c.ctx.ClientIP()
+}
+
 type HttpServer struct {
 	engine *gin.Engine
 }

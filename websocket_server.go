@@ -147,6 +147,10 @@ func (c *WebSocketContext) FormFile(name string) (*multipart.FileHeader, error) 
 	return nil, nil
 }
 
+func (c *WebSocketContext) GetIp() string {
+	return ""
+}
+
 type WebSocketServer struct {
 	opts     *SocketOptions
 	sm       *SessionManager
