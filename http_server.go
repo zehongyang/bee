@@ -2,14 +2,15 @@ package bee
 
 import (
 	"encoding/json"
-	"github.com/gin-gonic/gin"
-	"github.com/gin-gonic/gin/binding"
-	"github.com/golang/protobuf/proto"
-	"github.com/zehongyang/bee/logger"
 	"mime/multipart"
 	"net/http"
 	"net/url"
 	"strconv"
+
+	"github.com/gin-gonic/gin"
+	"github.com/gin-gonic/gin/binding"
+	"github.com/golang/protobuf/proto"
+	"github.com/zehongyang/bee/logger"
 )
 
 var _ IContext = (*HttpContext)(nil)
@@ -60,6 +61,7 @@ func (c *HttpContext) ResponseOk(obj any) {
 }
 
 func (c *HttpContext) ResponseError(code int, msg ...string) {
+	c.ctx.Abort()
 	c.ctx.Header(HeaderCode, strconv.Itoa(code))
 	if len(msg) > 0 {
 		c.ctx.Header(HeaderError, url.QueryEscape(msg[0]))
@@ -168,4 +170,12 @@ func (s *RouterGroup) Post(relativePath string, handler Handler) {
 			ctx: c,
 		})
 	})
+}
+
+func (s *RouterGroup) Use(handlers ...Handler) {
+	for _, handler := range handlers {
+		s.RouterGroup.Use(func(c *gin.Context) {
+			handler(&HttpContext{ctx: c})
+		})
+	}
 }

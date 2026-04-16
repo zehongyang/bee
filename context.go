@@ -14,7 +14,11 @@ const (
 )
 
 type AccountInfo struct {
-	Uid int
+	Uid int64
+}
+
+func (a AccountInfo) GetUid() int64 {
+	return a.Uid
 }
 
 type Handler func(ctx IContext)
