@@ -1,9 +1,10 @@
 package bee
 
 import (
-	"github.com/zehongyang/bee/utils"
 	"reflect"
 	"testing"
+
+	"github.com/zehongyang/bee/utils"
 )
 
 func TestSessionManager(t *testing.T) {
