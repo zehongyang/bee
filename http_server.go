@@ -113,6 +113,26 @@ func (c *HttpContext) GetIp() string {
 	return c.ctx.ClientIP()
 }
 
+// GetPath 返回当前请求命中的路由模板路径，例如 "/api/v1/meetings/:id"。
+func (c *HttpContext) GetPath() string {
+	return c.ctx.FullPath()
+}
+
+// GetStatus 返回底层 gin ResponseWriter 已经写出的 HTTP 状态码。
+func (c *HttpContext) GetStatus() int {
+	return c.ctx.Writer.Status()
+}
+
+// Set 把键值对存入 gin.Context 自带的请求级存储，供同一次请求内的中间件和 handler 共享。
+func (c *HttpContext) Set(key string, value any) {
+	c.ctx.Set(key, value)
+}
+
+// Get 从 gin.Context 自带的请求级存储中读取 Set 存入的值。
+func (c *HttpContext) Get(key string) (any, bool) {
+	return c.ctx.Get(key)
+}
+
 type HttpServer struct {
 	engine *gin.Engine
 }

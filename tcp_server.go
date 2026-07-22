@@ -10,6 +10,7 @@ import (
 	"mime/multipart"
 	"net"
 	"net/http"
+	"strconv"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -293,6 +294,27 @@ func (t *TcpContext) FormFile(name string) (*multipart.FileHeader, error) {
 
 func (t *TcpContext) GetIp() string {
 	return ""
+}
+
+// GetPath 在 TCP 场景下没有 URL 路径概念，用 fid 的字符串形式代替，方便日志区分业务功能。
+func (t *TcpContext) GetPath() string {
+	return strconv.Itoa(int(t.pkg.Fid))
+}
+
+// GetStatus 返回本次响应写回的业务状态码。
+func (t *TcpContext) GetStatus() int {
+	return int(t.pkg.Code)
+}
+
+// Set 把键值对存入本次消息处理的 context.Context 里，供同一次调用链内的中间件和 handler 共享。
+func (t *TcpContext) Set(key string, value any) {
+	t.ctx = context.WithValue(t.ctx, ctxValueKey(key), value)
+}
+
+// Get 从 context.Context 中读取 Set 存入的值。
+func (t *TcpContext) Get(key string) (any, bool) {
+	v := t.ctx.Value(ctxValueKey(key))
+	return v, v != nil
 }
 
 type SessionManager struct {

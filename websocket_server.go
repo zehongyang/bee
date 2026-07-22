@@ -10,9 +10,13 @@ import (
 	"log"
 	"mime/multipart"
 	"net/http"
+	"strconv"
 	"sync"
 	"time"
 )
+
+// ctxValueKey 是存入 context.Context 的自定义 key 类型，避免和其他包的字符串 key 冲突。
+type ctxValueKey string
 
 type WebSocketData struct {
 	ContentType int    `json:"content_type"`
@@ -149,6 +153,27 @@ func (c *WebSocketContext) FormFile(name string) (*multipart.FileHeader, error) 
 
 func (c *WebSocketContext) GetIp() string {
 	return ""
+}
+
+// GetPath 在 WebSocket 场景下没有 URL 路径概念，用 fid 的字符串形式代替，方便日志区分业务功能。
+func (c *WebSocketContext) GetPath() string {
+	return strconv.Itoa(c.data.Fid)
+}
+
+// GetStatus 返回本次响应写回的业务状态码。
+func (c *WebSocketContext) GetStatus() int {
+	return c.data.Code
+}
+
+// Set 把键值对存入本次消息处理的 context.Context 里，供同一次调用链内的中间件和 handler 共享。
+func (c *WebSocketContext) Set(key string, value any) {
+	c.ctx = context.WithValue(c.ctx, ctxValueKey(key), value)
+}
+
+// Get 从 context.Context 中读取 Set 存入的值。
+func (c *WebSocketContext) Get(key string) (any, bool) {
+	v := c.ctx.Value(ctxValueKey(key))
+	return v, v != nil
 }
 
 type WebSocketServer struct {
