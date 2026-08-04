@@ -158,6 +158,12 @@ func NewHttpServer() *HttpServer {
 	}
 }
 
+// ServeHTTP 让 HttpServer 满足标准库的 http.Handler，可以直接交给 httptest 驱动，
+// 也方便把它挂到外层的 http.Server 上做优雅关闭。
+func (s *HttpServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	s.engine.ServeHTTP(w, r)
+}
+
 func (s *HttpServer) Run(addr string) error {
 	logger.Info().Any("addr", addr).Msg("http server running")
 	return s.engine.Run(addr)
