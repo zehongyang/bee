@@ -1,6 +1,9 @@
 package bee
 
-import "mime/multipart"
+import (
+	"context"
+	"mime/multipart"
+)
 
 type connState int
 
@@ -36,6 +39,12 @@ type IContext interface {
 	BindHeader(obj any) error
 	BindUri(obj any) error
 	GetMethod() string
+	// Query 返回 URL 查询参数的值，参数不存在时返回空字符串。
+	// 只有 HTTP 场景有查询参数，WebSocket/TCP 的实现固定返回空字符串。
+	Query(key string) string
+	// Context 返回本次请求的 context，客户端断开时会被取消，用于向下游传递超时和取消信号。
+	// WebSocket/TCP 的实现返回 context.Background()。
+	Context() context.Context
 	FormFile(name string) (*multipart.FileHeader, error)
 	GetIp() string
 	// GetPath 返回当前请求命中的路由路径，WebSocket/TCP 场景下返回对应的 Fid 字符串。

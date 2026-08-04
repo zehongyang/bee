@@ -147,6 +147,16 @@ func (c *WebSocketContext) GetMethod() string {
 	return ""
 }
 
+// Query 在 WebSocket 场景下没有对应概念，固定返回空字符串。
+func (c *WebSocketContext) Query(key string) string {
+	return ""
+}
+
+// Context 在 WebSocket 场景下没有对应的请求生命周期，返回 context.Background()。
+func (c *WebSocketContext) Context() context.Context {
+	return context.Background()
+}
+
 func (c *WebSocketContext) FormFile(name string) (*multipart.FileHeader, error) {
 	return nil, nil
 }

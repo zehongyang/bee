@@ -1,6 +1,7 @@
 package bee
 
 import (
+	"context"
 	"encoding/json"
 	"mime/multipart"
 	"net/http"
@@ -105,6 +106,20 @@ func (c *HttpContext) GetMethod() string {
 	return c.ctx.Request.Method
 }
 
+// Context 返回底层 HTTP 请求的 context。客户端断开连接时它会被取消，
+// 业务侧把它一路传给数据库和第三方调用，就不会在客户端已经走掉之后还继续消耗资源。
+func (c *HttpContext) Context() context.Context {
+	return c.ctx.Request.Context()
+}
+
+// Query 返回 URL 查询参数的值，参数不存在时返回空字符串。
+// 刻意不复用 gin 的 Bind 来读查询参数：Bind 在解析失败时会直接写出 400 并中断请求，
+// 而本框架约定业务错误一律走 HTTP 200 + 响应体里的 error 字段（见 envelope.go）。
+// handler 自己按字符串解析，才能把格式错误也翻译成统一的业务错误码。
+func (c *HttpContext) Query(key string) string {
+	return c.ctx.Query(key)
+}
+
 func (c *HttpContext) FormFile(name string) (*multipart.FileHeader, error) {
 	return c.ctx.FormFile(name)
 }
@@ -186,6 +201,24 @@ func (s *HttpServer) Group(relativePath string) *RouterGroup {
 
 func (s *RouterGroup) Post(relativePath string, handler Handler) {
 	s.RouterGroup.POST(relativePath, func(c *gin.Context) {
+		handler(&HttpContext{
+			ctx: c,
+		})
+	})
+}
+
+// Get 在路由分组下注册一个 GET 路由，与 RouterGroup.Post 对称。
+func (s *RouterGroup) Get(relativePath string, handler Handler) {
+	s.RouterGroup.GET(relativePath, func(c *gin.Context) {
+		handler(&HttpContext{
+			ctx: c,
+		})
+	})
+}
+
+// Register 在路由分组下注册任意 HTTP 方法的路由，与 HttpServer.Register 对称。
+func (s *RouterGroup) Register(httpMethod, relativePath string, handler Handler) {
+	s.RouterGroup.Handle(httpMethod, relativePath, func(c *gin.Context) {
 		handler(&HttpContext{
 			ctx: c,
 		})

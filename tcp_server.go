@@ -288,6 +288,16 @@ func (t *TcpContext) GetMethod() string {
 	return ""
 }
 
+// Query 在 TCP 场景下没有对应概念，固定返回空字符串。
+func (t *TcpContext) Query(key string) string {
+	return ""
+}
+
+// Context 在 TCP 场景下没有对应的请求生命周期，返回 context.Background()。
+func (t *TcpContext) Context() context.Context {
+	return context.Background()
+}
+
 func (t *TcpContext) FormFile(name string) (*multipart.FileHeader, error) {
 	return nil, nil
 }
