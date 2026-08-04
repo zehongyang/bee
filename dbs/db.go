@@ -95,6 +95,9 @@ var getSplitTableConfig = utils.Single(func() *SplitTableConfig {
 	return &conf
 })
 
+// Get 按分表名取出分表句柄，用于配置了 splitTable 的场景。
+// 表名没有在 splitTable 段登记时直接终止进程——分表配置写错属于部署事故，
+// 让它在启动阶段暴露比线上路由到错误的表要好。
 func Get(tableName string) *SplitTable {
 	tableConfig := getSplitTableConfig()
 	if tableConfig == nil {
@@ -109,34 +112,51 @@ func Get(tableName string) *SplitTable {
 	if st.engine != nil {
 		return st
 	}
-	var err error
-	dbConfig := getDBConfig()
-	dbsConfig, ok := dbConfig.dbMp[st.DBName]
-	if !ok {
-		logger.Fatal().Str("tableName", tableName).Msg("Get DB config failed")
-		return nil
-	}
 	globalDBS.mu.Lock()
 	defer globalDBS.mu.Unlock()
-	egn, ok := globalDBS.engines[st.DBName]
-	if !ok {
-		egn, err = xorm.NewEngine(dbsConfig.Driver, dbsConfig.DataSource)
-		if err != nil {
-			logger.Fatal().Err(err).Str("tableName", tableName).Any("cfg", dbsConfig).Msg("NewEngine failed")
-			return nil
-		}
-		egn.SetMaxIdleConns(dbsConfig.MaxIdle)
-		egn.SetMaxOpenConns(dbsConfig.MaxConn)
-		egn.SetConnMaxLifetime(time.Second * time.Duration(dbsConfig.MaxLifeTimeSeconds))
-		err = egn.Ping()
-		if err != nil {
-			logger.Fatal().Err(err).Str("tableName", tableName).Msg("Ping failed")
-			return nil
-		}
-		globalDBS.engines[st.DBName] = egn
-	}
+	// 二次检查：拿锁期间可能已经有别的 goroutine 填好了。
 	if st.engine == nil {
-		st.engine = egn
+		st.engine = engineLocked(st.DBName)
 	}
 	return st
+}
+
+// GetDB 按 application.yml 里 dbs 段的 name 取出数据库引擎。
+//
+// 和 Get 的区别是不需要 splitTable 配置：绝大多数业务表并不分表，
+// 为了拿一个引擎去维护一份和建表语句平行的表名清单没有意义，而且新增表时容易漏配。
+// 两者共用同一份引擎缓存和连接池设置，同名数据库只会建一个引擎。
+func GetDB(dbName string) *xorm.Engine {
+	globalDBS.mu.Lock()
+	defer globalDBS.mu.Unlock()
+	return engineLocked(dbName)
+}
+
+// engineLocked 返回指定数据库的引擎，没有就按配置新建并放进缓存。
+// 调用方必须已经持有 globalDBS.mu。配置缺失或连不通时终止进程：
+// 业务接口离开数据库无法工作，带着一个连不上的库启动只会让每个请求都失败。
+func engineLocked(dbName string) *xorm.Engine {
+	if egn, ok := globalDBS.engines[dbName]; ok {
+		return egn
+	}
+	dbConfig := getDBConfig()
+	dbsConfig, ok := dbConfig.dbMp[dbName]
+	if !ok {
+		logger.Fatal().Str("dbName", dbName).Msg("Get DB config failed")
+		return nil
+	}
+	egn, err := xorm.NewEngine(dbsConfig.Driver, dbsConfig.DataSource)
+	if err != nil {
+		logger.Fatal().Err(err).Str("dbName", dbName).Any("cfg", dbsConfig).Msg("NewEngine failed")
+		return nil
+	}
+	egn.SetMaxIdleConns(dbsConfig.MaxIdle)
+	egn.SetMaxOpenConns(dbsConfig.MaxConn)
+	egn.SetConnMaxLifetime(time.Second * time.Duration(dbsConfig.MaxLifeTimeSeconds))
+	if err = egn.Ping(); err != nil {
+		logger.Fatal().Err(err).Str("dbName", dbName).Msg("Ping failed")
+		return nil
+	}
+	globalDBS.engines[dbName] = egn
+	return egn
 }
