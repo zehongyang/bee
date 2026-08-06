@@ -245,6 +245,10 @@ func (t *TcpContext) ResponseOk(obj any) {
 func (t *TcpContext) ResponseBytes(contentType string, filename string, data []byte) {
 }
 
+// ResponseRaw 在 TCP 场景下没有 HTTP 状态码的概念，是空操作。
+func (t *TcpContext) ResponseRaw(statusCode int, contentType string, data []byte) {
+}
+
 func (t *TcpContext) ResponseError(code int, msg ...string) {
 	t.pkg.Code = int32(code)
 	wd := t.pkg.Marshal(t.pkg.Fid, int32(code), nil)
@@ -282,6 +286,12 @@ func (t *TcpContext) GetHeader(key string) string {
 
 func (t *TcpContext) BindHeader(obj any) error {
 	return nil
+}
+
+// GetRawBody 返回本次数据包的原始载荷。TCP 协议下 Bind 是对 pkg.Data 做反序列化，
+// 不消耗任何流，所以直接返回这份字节即可，取过之后 Bind 照常可用。
+func (t *TcpContext) GetRawBody() ([]byte, error) {
+	return t.pkg.Data, nil
 }
 
 func (t *TcpContext) BindUri(obj any) error {

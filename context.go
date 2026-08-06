@@ -43,12 +43,29 @@ type IContext interface {
 	// filename 非空时会写 Content-Disposition 触发浏览器下载，中文文件名按 RFC 5987 编码。
 	// 只有 HTTP 场景有意义，WebSocket/TCP 的实现是空操作。
 	ResponseBytes(contentType string, filename string, data []byte)
+	// ResponseRaw 按调用方指定的 HTTP 状态码原样写回响应体，不写 Code 头。
+	//
+	// 这是一个刻意开的口子，只给第三方 Webhook 应答用：支付渠道的回调协议是对方定的，
+	// 微信要 JSON 且靠 HTTP 状态码判断成败（非 2xx 才会重推），支付宝要纯文本 success，
+	// 都不认本框架"状态码恒 200 + Code 头"的约定。
+	//
+	// 业务接口一律不要用它——用了客户端就没法按同一套逻辑判成败。
+	// 只有 HTTP 场景有意义，WebSocket/TCP 的实现是空操作。
+	ResponseRaw(statusCode int, contentType string, data []byte)
 	ResponseError(code int, msg ...string)
 	Next()
 	AbortWithStatus(code int)
 	SetAccount(account AccountInfo)
 	GetHeader(key string) string
 	SetHeader(key, value string)
+	// GetRawBody 返回本次请求体的原始字节，且不影响之后再调用 Bind。
+	//
+	// 存在的理由是第三方 Webhook 验签：签名是对报文原文算出来的，Bind 成结构体再
+	// 重新序列化，字段顺序、空格、数字格式都可能变，签名必然对不上。所以验签这类场景
+	// 必须拿到一字节不差的原文。
+	//
+	// 请求没有 body 时返回 nil, nil。
+	GetRawBody() ([]byte, error)
 	BindHeader(obj any) error
 	BindUri(obj any) error
 	GetMethod() string

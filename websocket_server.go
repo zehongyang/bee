@@ -95,6 +95,10 @@ func (c *WebSocketContext) ResponseOk(obj any) {
 func (c *WebSocketContext) ResponseBytes(contentType string, filename string, data []byte) {
 }
 
+// ResponseRaw 在 WebSocket 场景下没有 HTTP 状态码的概念，是空操作。
+func (c *WebSocketContext) ResponseRaw(statusCode int, contentType string, data []byte) {
+}
+
 func (c *WebSocketContext) ResponseError(code int, msg ...string) {
 	c.data.Code = code
 	c.data.Data = nil
@@ -142,6 +146,12 @@ func (c *WebSocketContext) GetHeader(key string) string {
 
 func (c *WebSocketContext) BindHeader(obj any) error {
 	return nil
+}
+
+// GetRawBody 返回本次消息的原始载荷。理由同 TcpContext：Bind 只是对 data.Data 做反序列化，
+// 不消耗流，取过之后 Bind 照常可用。
+func (c *WebSocketContext) GetRawBody() ([]byte, error) {
+	return c.data.Data, nil
 }
 
 func (c *WebSocketContext) BindUri(obj any) error {

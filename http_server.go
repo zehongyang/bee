@@ -1,9 +1,11 @@
 package bee
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"mime/multipart"
 	"net/http"
 	"net/url"
@@ -76,6 +78,15 @@ func (c *HttpContext) ResponseBytes(contentType string, filename string, data []
 	c.ctx.Data(http.StatusOK, contentType, data)
 }
 
+// ResponseRaw 按给定的 HTTP 状态码原样写回响应体。刻意不写 Code 头——
+// 调用方是在按第三方定的协议应答，而不是在回应本框架的客户端。
+func (c *HttpContext) ResponseRaw(statusCode int, contentType string, data []byte) {
+	if contentType == "" {
+		contentType = MIMEOctetStream
+	}
+	c.ctx.Data(statusCode, contentType, data)
+}
+
 // contentDisposition 按 RFC 6266 / RFC 5987 组装下载头。
 //
 // 同时给出 ASCII 回退名和 UTF-8 编码名：只写 filename= 的话，中文名在部分客户端会乱码
@@ -129,6 +140,23 @@ func (c *HttpContext) GetHeader(key string) string {
 
 func (c *HttpContext) BindHeader(obj any) error {
 	return c.ctx.BindHeader(obj)
+}
+
+// GetRawBody 读出整个请求体并把它塞回 Request.Body，让后续的 Bind 仍然能正常工作。
+//
+// http.Request.Body 是一次性的流，读空之后 Bind、PostForm 这些依赖 body 的调用就全拿不到
+// 数据了。Webhook 处理的典型流程恰恰是"先取原文验签，再解析内容"，两步都要读同一份 body，
+// 所以这里必须补上重放。
+func (c *HttpContext) GetRawBody() ([]byte, error) {
+	if c.ctx.Request == nil || c.ctx.Request.Body == nil {
+		return nil, nil
+	}
+	data, err := io.ReadAll(c.ctx.Request.Body)
+	if err != nil {
+		return nil, err
+	}
+	c.ctx.Request.Body = io.NopCloser(bytes.NewReader(data))
+	return data, nil
 }
 
 func (c *HttpContext) BindUri(obj any) error {
