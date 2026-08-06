@@ -90,6 +90,11 @@ func (c *WebSocketContext) ResponseOk(obj any) {
 	}
 }
 
+// ResponseBytes 在 WebSocket 场景下是空操作：下载文件是 HTTP 独有的语义，
+// 这里静默忽略而不是报错，与 Query、FormFile 的处理方式保持一致。
+func (c *WebSocketContext) ResponseBytes(contentType string, filename string, data []byte) {
+}
+
 func (c *WebSocketContext) ResponseError(code int, msg ...string) {
 	c.data.Code = code
 	c.data.Data = nil

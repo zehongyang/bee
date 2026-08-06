@@ -8,8 +8,12 @@ import (
 type connState int
 
 const (
-	HeaderCode                = "Code"
-	HeaderError               = "Error"
+	HeaderCode  = "Code"
+	HeaderError = "Error"
+	// HeaderContentDisposition 用于下载响应，告诉客户端这是附件以及建议的文件名。
+	HeaderContentDisposition = "Content-Disposition"
+	// MIMEOctetStream 是二进制响应在调用方没指定类型时的兜底 Content-Type。
+	MIMEOctetStream           = "application/octet-stream"
 	AccountInfoKey            = "Account"
 	connStateNew    connState = 1
 	connStateActive connState = 2
@@ -30,6 +34,15 @@ type IContext interface {
 	Bind(obj any) error
 	GetAccount() AccountInfo
 	ResponseOk(obj any)
+	// ResponseBytes 直接把二进制内容作为响应体返回，用于下载文件这类不适合走 JSON 的场景
+	// （base64 塞进 JSON 会平白多传三分之一）。
+	//
+	// 与 ResponseOk 一样把 Code 头置为 200，所以客户端的判成败逻辑不用改：先看 Code 头，
+	// 是 200 才把响应体当文件读。失败路径仍然走 ResponseError（空体 + Code/Error 头）。
+	//
+	// filename 非空时会写 Content-Disposition 触发浏览器下载，中文文件名按 RFC 5987 编码。
+	// 只有 HTTP 场景有意义，WebSocket/TCP 的实现是空操作。
+	ResponseBytes(contentType string, filename string, data []byte)
 	ResponseError(code int, msg ...string)
 	Next()
 	AbortWithStatus(code int)

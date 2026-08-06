@@ -241,6 +241,10 @@ func (t *TcpContext) ResponseOk(obj any) {
 	}
 }
 
+// ResponseBytes 在 TCP 场景下是空操作，原因同 WebSocketContext.ResponseBytes。
+func (t *TcpContext) ResponseBytes(contentType string, filename string, data []byte) {
+}
+
 func (t *TcpContext) ResponseError(code int, msg ...string) {
 	t.pkg.Code = int32(code)
 	wd := t.pkg.Marshal(t.pkg.Fid, int32(code), nil)

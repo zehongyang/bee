@@ -3,10 +3,12 @@ package bee
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"mime/multipart"
 	"net/http"
 	"net/url"
 	"strconv"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 	"github.com/gin-gonic/gin/binding"
@@ -59,6 +61,37 @@ func (c *HttpContext) ResponseOk(obj any) {
 	}
 	c.ctx.Header(HeaderCode, strconv.Itoa(http.StatusOK))
 	c.ctx.Data(http.StatusOK, contentType, data)
+}
+
+// ResponseBytes 把二进制内容写回客户端，Code 头与 ResponseOk 保持一致（200），
+// 让客户端可以用同一套"先看 Code 头再决定怎么读 body"的逻辑处理下载接口。
+func (c *HttpContext) ResponseBytes(contentType string, filename string, data []byte) {
+	if contentType == "" {
+		contentType = MIMEOctetStream
+	}
+	c.ctx.Header(HeaderCode, strconv.Itoa(http.StatusOK))
+	if filename != "" {
+		c.ctx.Header(HeaderContentDisposition, contentDisposition(filename))
+	}
+	c.ctx.Data(http.StatusOK, contentType, data)
+}
+
+// contentDisposition 按 RFC 6266 / RFC 5987 组装下载头。
+//
+// 同时给出 ASCII 回退名和 UTF-8 编码名：只写 filename= 的话，中文名在部分客户端会乱码
+// 或被整个丢弃；只写 filename*= 的话，个别老客户端又认不出来。两个都写是通行做法。
+func contentDisposition(filename string) string {
+	var ascii strings.Builder
+	for _, r := range filename {
+		// 非 ASCII、控制字符和会破坏引号包裹的字符统一换成下划线。
+		if r < 0x20 || r > 0x7e || r == '"' || r == '\\' {
+			ascii.WriteByte('_')
+			continue
+		}
+		ascii.WriteRune(r)
+	}
+	return fmt.Sprintf(`attachment; filename="%s"; filename*=UTF-8''%s`,
+		ascii.String(), url.PathEscape(filename))
 }
 
 func (c *HttpContext) ResponseError(code int, msg ...string) {
