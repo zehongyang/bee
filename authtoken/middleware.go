@@ -26,12 +26,27 @@ var (
 // 校验通过后把 uid 写入 ctx 的 AccountInfo 并放行；校验失败则写回未登录错误并终止后续处理。
 // 只能注册到 bee.HttpServer 上（依赖 Next() 真正串联调用链）。
 func Middleware(rdsName string) bee.Handler {
+	return New(rdsName, "").Middleware(0, "")
+}
+
+// Middleware 返回本命名空间下的鉴权中间件。
+//
+// code 和 message 用于覆盖未登录时返回的错误码和文案，传零值则用包级的默认值。
+// 之所以做成参数而不是继续用包级变量：一个进程里可能同时跑着 App 和管理后台两套登录态，
+// 而前端要靠错误码区分"跳 App 登录页"还是"跳后台登录页"，两者不能共用一个码。
+func (s *Store) Middleware(code int, message string) bee.Handler {
+	if code == 0 {
+		code = UnauthenticatedCode
+	}
+	if message == "" {
+		message = UnauthenticatedMessage
+	}
 	return func(ctx bee.IContext) {
 		token := extractToken(ctx.GetHeader("Authorization"))
-		uid, err := Verify(rdsName, token)
+		uid, err := s.Verify(token)
 		if err != nil {
 			// ResponseError 内部已经 Abort，HTTP 状态码仍是 200，错误码走 Code 响应头。
-			ctx.ResponseError(UnauthenticatedCode, UnauthenticatedMessage)
+			ctx.ResponseError(code, message)
 			return
 		}
 		ctx.SetAccount(bee.AccountInfo{Uid: uid})
