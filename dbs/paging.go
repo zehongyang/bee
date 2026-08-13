@@ -43,8 +43,24 @@ func ApplyCursor(session *xorm.Session, idColumn string, page CursorPage) *xorm.
 	return session.Asc(idColumn).Limit(limit + 1)
 }
 
-// BuildCursorResult 根据 ApplyCursor 查出来的记录（可能比 limit 多一条）计算出游标分页的元信息，
-// 并把多查出来的那一条从返回结果里截掉。getID 用于取出每条记录的自增主键，items 必须已经按主键升序排列。
+// ApplyCursorDesc 是 ApplyCursor 的倒序版本：按自增主键降序、只取小于 AfterID 的记录。
+//
+// 面向"最新的排最前"的列表（消息、工单、订单这类），它们翻页是往更早翻，
+// 用升序游标就得先知道最大 ID 才能起步，等于把分页逻辑推给调用方。
+// 返回结果同样可以直接交给 BuildCursorResult：降序时最后一条是本页最小的 ID，
+// 正好是下一页 "id < afterID" 要用的游标。
+func ApplyCursorDesc(session *xorm.Session, idColumn string, page CursorPage) *xorm.Session {
+	limit := normalizeLimit(page.Limit)
+	if page.AfterID > 0 {
+		session = session.Where(idColumn+" < ?", page.AfterID)
+	}
+	return session.Desc(idColumn).Limit(limit + 1)
+}
+
+// BuildCursorResult 根据 ApplyCursor / ApplyCursorDesc 查出来的记录（可能比 limit 多一条）计算出
+// 游标分页的元信息，并把多查出来的那一条从返回结果里截掉。getID 用于取出每条记录的自增主键。
+// items 必须已经按查询时使用的方向排好序——升序查询就是升序，降序查询就是降序，
+// next_after_id 一律取截断后最后一条的主键。
 func BuildCursorResult[T any](items []T, limit int, getID func(T) int64) ([]T, CursorResult) {
 	limit = normalizeLimit(limit)
 	hasMore := len(items) > limit

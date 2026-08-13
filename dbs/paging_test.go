@@ -39,6 +39,23 @@ func TestBuildCursorResultNoMore(t *testing.T) {
 	}
 }
 
+// TestBuildCursorResultDesc 验证降序查询同样能用 BuildCursorResult：
+// 截断后最后一条是本页最小的 ID，正是下一页 "id < afterID" 该用的游标。
+func TestBuildCursorResultDesc(t *testing.T) {
+	items := []fakeRow{{ID: 9}, {ID: 8}, {ID: 7}}
+	got, result := BuildCursorResult(items, 2, func(r fakeRow) int64 { return r.ID })
+
+	if len(got) != 2 || got[0].ID != 9 || got[1].ID != 8 {
+		t.Fatalf("expected items [9 8], got %+v", got)
+	}
+	if !result.HasMore {
+		t.Fatalf("expected HasMore=true when items exceed limit")
+	}
+	if result.NextAfterID != 8 {
+		t.Fatalf("expected NextAfterID=8, got %d", result.NextAfterID)
+	}
+}
+
 // TestBuildCursorResultEmpty 验证空结果时不会 panic，且 next_after_id 保持零值。
 func TestBuildCursorResultEmpty(t *testing.T) {
 	got, result := BuildCursorResult([]fakeRow{}, 10, func(r fakeRow) int64 { return r.ID })
