@@ -3,17 +3,21 @@ package bee
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"github.com/golang/protobuf/proto"
 	"github.com/gorilla/websocket"
 	"github.com/zehongyang/bee/logger"
 	"github.com/zehongyang/bee/utils"
-	"log"
 	"mime/multipart"
 	"net/http"
 	"strconv"
 	"sync"
+	"sync/atomic"
 	"time"
 )
+
+// defaultWsPath 是没有用 WithWsPath 指定时的 WebSocket 握手路径。
+const defaultWsPath = "/ws"
 
 // ctxValueKey 是存入 context.Context 的自定义 key 类型，避免和其他包的字符串 key 冲突。
 type ctxValueKey string
@@ -209,7 +213,9 @@ type WebSocketServer struct {
 	pool     *sync.Pool
 	mu       sync.Mutex
 	conns    map[*Session]struct{}
-	shutDown bool
+	srv      *http.Server
+	// shutDown 用原子量：写在 Shutdown 所在的 goroutine，读在每个连接的读循环里。
+	shutDown atomic.Bool
 }
 
 func NewWebSocketServer(options ...OptionFun) *WebSocketServer {
@@ -225,28 +231,43 @@ func NewWebSocketServer(options ...OptionFun) *WebSocketServer {
 	if opts.writeTimeout < 1 {
 		opts.writeTimeout = defaultWriteTimeout
 	}
+	if len(opts.wsPath) < 1 {
+		opts.wsPath = defaultWsPath
+	}
 	hd := &socketHandler{
 		handlers: make(map[int64]Handler),
 		local:    make(map[int64]Handler),
 	}
-	return &WebSocketServer{opts: &opts, sm: NewSessionManager(), conns: map[*Session]struct{}{}, handler: hd,
+	// 自带 mux 和 http.Server，不再用 http.DefaultServeMux + http.ListenAndServe：
+	// 全局 mux 会让同进程里起两个 WebSocket server 直接 panic（重复注册路径），
+	// 而 ListenAndServe 不交出 server 句柄，也就没法优雅关闭。
+	mux := http.NewServeMux()
+	s := &WebSocketServer{opts: &opts, sm: NewSessionManager(), conns: map[*Session]struct{}{}, handler: hd,
 		upgrader: &websocket.Upgrader{
 			CheckOrigin: func(r *http.Request) bool {
 				return true
 			},
-		}, pool: &sync.Pool{New: func() interface{} {
+		}, srv: &http.Server{Handler: mux}, pool: &sync.Pool{New: func() interface{} {
 			return &WebSocketContext{}
 		}}}
+	mux.HandleFunc(opts.wsPath, s.serveWs)
+	return s
 }
 
-func (s *WebSocketServer) Run(addr, wsPath string) error {
-	http.HandleFunc(wsPath, s.serveWs)
-	log.Println("websocket running on addr", addr)
-	return http.ListenAndServe(addr, nil)
+// Run 阻塞式启动 WebSocket 监听，直到监听出错或者 Shutdown 被调用。
+// 握手路径由 WithWsPath 指定，这样签名和其他 server 一致，可以交给 bee.Run 托管。
+func (s *WebSocketServer) Run(addr string) error {
+	s.srv.Addr = addr
+	logger.Info().Any("addr", addr).Any("path", s.opts.wsPath).Msg("websocket server running")
+	if err := s.srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+		return err
+	}
+	// ErrServerClosed 是 Shutdown 触发的正常退出，不是故障。
+	return nil
 }
 
 func (s *WebSocketServer) serveWs(w http.ResponseWriter, r *http.Request) {
-	if s.shutDown {
+	if s.shutDown.Load() {
 		logger.Info().Msg("websocket server is shutting down")
 		return
 	}
@@ -291,7 +312,7 @@ func (s *WebSocketServer) handle(conn *websocket.Conn) {
 			logger.Error().Err(err).Any("uid", ses.uid).Msg("handleWs")
 			return
 		}
-		if wd != nil && !s.shutDown {
+		if wd != nil && !s.shutDown.Load() {
 			hd, ok := s.handler.handlers[int64(wd.Fid)]
 			if ok {
 				wc := s.pool.Get()
@@ -318,14 +339,17 @@ func (s *WebSocketServer) RegisterLocal(fid int64, h Handler) {
 	s.handler.local[fid] = h
 }
 
-func (s *WebSocketServer) Shutdown() {
-	s.shutDown = true
-	ctx, cancelFunc := context.WithDeadline(context.Background(), time.Now().Add(time.Second*5))
-	defer cancelFunc()
-	err := s.closeIdle(ctx)
-	if err != nil {
-		logger.Error().Err(err).Msg("tcp server shutdown")
+// Shutdown 先拒掉新的握手，再等在途请求处理完才断开已有连接。
+// 关闭预算由 ctx 决定（bee.Run 按 shutdown.timeoutSeconds 给）。
+func (s *WebSocketServer) Shutdown(ctx context.Context) error {
+	// 先置标志：srv.Shutdown 只管 HTTP 层，已经升级成 WebSocket 的连接是被 Hijack 走的，
+	// 它不认识、也不会等；正在握手的那些则要靠这个标志当场拒掉。
+	s.shutDown.Store(true)
+	err := s.srv.Shutdown(ctx)
+	if cErr := s.closeIdle(ctx); cErr != nil && err == nil {
+		err = cErr
 	}
+	return err
 }
 
 func (s *WebSocketServer) closeIdle(ctx context.Context) error {
@@ -348,6 +372,8 @@ func (s *WebSocketServer) closeIdle(ctx context.Context) error {
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
+		case <-time.After(closeIdlePollInterval):
+			// 还有连接在处理请求，等一会儿再看一轮。理由同 TcpServer.closeIdle。
 		}
 	}
 }

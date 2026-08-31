@@ -1,12 +1,14 @@
 package dbs
 
 import (
+	"context"
 	"fmt"
 	"github.com/cespare/xxhash"
 	_ "github.com/go-sql-driver/mysql"
 	_ "github.com/lib/pq"
 	_ "github.com/mattn/go-sqlite3"
 	"github.com/zehongyang/bee/config"
+	"github.com/zehongyang/bee/lifecycle"
 	"github.com/zehongyang/bee/logger"
 	"github.com/zehongyang/bee/utils"
 	"sync"
@@ -158,5 +160,11 @@ func engineLocked(dbName string) *xorm.Engine {
 		return nil
 	}
 	globalDBS.engines[dbName] = egn
+	// 引擎是惰性建的，谁也说不准 main 里该关哪几个，所以在这里就把关闭动作登记给 lifecycle，
+	// 由 bee.Run 在退出前统一执行。不关的话，进程退出时连接是被操作系统硬切的，
+	// 数据库那头要等超时才回收。
+	lifecycle.OnShutdown("dbs:"+dbName, func(ctx context.Context) error {
+		return egn.Close()
+	})
 	return egn
 }

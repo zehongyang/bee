@@ -1,3 +1,7 @@
 logger:
   level: "debug"
   writer: "console"
+
+shutdown:
+  # 优雅关闭的总预算（秒），停止接收新请求、等在途请求收尾、执行清理钩子共用这一份
+  timeoutSeconds: 20

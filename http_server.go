@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"mime/multipart"
@@ -211,23 +212,42 @@ func (c *HttpContext) Get(key string) (any, bool) {
 
 type HttpServer struct {
 	engine *gin.Engine
+	srv    *http.Server
 }
 
 func NewHttpServer() *HttpServer {
+	engine := gin.Default()
+	// 在这里就把 http.Server 建好，而不是等 Run 的时候：Run 通常跑在另一个 goroutine 里，
+	// 晚建就会出现"信号来得比 Run 快、Shutdown 拿到 nil"的空窗。
 	return &HttpServer{
-		engine: gin.Default(),
+		engine: engine,
+		srv:    &http.Server{Handler: engine},
 	}
 }
 
 // ServeHTTP 让 HttpServer 满足标准库的 http.Handler，可以直接交给 httptest 驱动，
-// 也方便把它挂到外层的 http.Server 上做优雅关闭。
+// 不必真的占一个端口。优雅关闭走 Shutdown，不需要再套一层外部 http.Server。
 func (s *HttpServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	s.engine.ServeHTTP(w, r)
 }
 
+// Run 阻塞式启动 HTTP 监听，直到监听出错或者 Shutdown 被调用。
+//
+// 刻意不用 gin 的 engine.Run：它内部直接调 http.ListenAndServe，调用方拿不到 *http.Server，
+// 也就没有任何办法优雅关闭。这里自己持有 server，Shutdown 才有东西可关。
 func (s *HttpServer) Run(addr string) error {
+	s.srv.Addr = addr
 	logger.Info().Any("addr", addr).Msg("http server running")
-	return s.engine.Run(addr)
+	if err := s.srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+		return err
+	}
+	// ErrServerClosed 是 Shutdown 触发的正常退出，不是故障。
+	return nil
+}
+
+// Shutdown 停止接受新连接，并等待在途请求处理完毕；ctx 到期后仍未结束的连接会被直接切断。
+func (s *HttpServer) Shutdown(ctx context.Context) error {
+	return s.srv.Shutdown(ctx)
 }
 
 func (s *HttpServer) Register(httpMethod, relativePath string, handler Handler) {

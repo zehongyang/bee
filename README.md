@@ -14,6 +14,7 @@ Bee 是一个基于 Go 语言的高性能、多协议支持的服务端框架。
   - **缓存/Redis**: 集成 [go-redis](https://github.com/redis/go-redis)，提供便捷的 Redis 操作接口。
   - **配置管理**: 使用 [Viper](https://github.com/spf13/viper) 加载 YAML 配置。
   - **日志**: 集成 [Zerolog](https://github.com/rs/zerolog) 高性能日志库。
+- **优雅关闭**: `bee.Run` 统一监听退出信号，先等在途请求收尾，再倒序执行清理钩子（见「5. 优雅关闭」）。
 - **工具库**: 提供单例模式、栈、去重等常用工具函数。
 
 ## 🛠️ 安装
@@ -31,6 +32,7 @@ package main
 
 import (
     "github.com/zehongyang/bee"
+    "github.com/zehongyang/bee/logger"
 )
 
 func main() {
@@ -43,8 +45,10 @@ func main() {
         })
     })
 
-    // 启动服务
-    server.Run(":8080")
+    // 启动服务：bee.Run 会阻塞到收到 SIGINT/SIGTERM，并负责优雅关闭
+    if err := bee.Run(server, ":8080"); err != nil {
+        logger.Fatal().Err(err).Msg("http server exited")
+    }
 }
 ```
 
@@ -58,10 +62,11 @@ import (
 )
 
 func main() {
-    server := bee.NewWebSocketServer()
+    // 握手路径由 WithWsPath 指定，默认 /ws
+    server := bee.NewWebSocketServer(bee.WithWsPath("/ws"))
 
     // 启动服务
-    server.Run(":8081", "/ws")
+    bee.Run(server, ":8081")
 }
 ```
 
@@ -77,8 +82,8 @@ import (
 )
 
 func main() {
-    server := bee.NewTcpServer() // 假设存在此构造函数，基于代码推断
-    server.Run(":8082")
+    server := bee.NewTcpServer()
+    bee.Run(server, ":8082")
 }
 ```
 
@@ -101,6 +106,33 @@ type IContext interface {
     BindUri(obj any) error                // 绑定 URI 数据
 }
 ```
+
+### 5. 优雅关闭
+
+三种 server 都实现了 `bee.Server`（`Run(addr) error` + `Shutdown(ctx) error`），交给 `bee.Run` 托管即可：
+
+```go
+func main() {
+    server := bee.NewHttpServer()
+
+    // 登记退出前要做的清理，按登记的相反顺序执行
+    bee.OnShutdown("worker", func(ctx context.Context) error {
+        return worker.Stop(ctx)
+    })
+
+    bee.Run(server, ":8080")
+}
+```
+
+收到 `SIGINT` / `SIGTERM` 后的固定顺序：
+
+1. 停止接受新请求，等待在途请求处理完；
+2. 倒序执行 `bee.OnShutdown` 登记的清理动作（`dbs.GetDB` / `rds.Get` 建立的连接会自动登记，不用自己写）；
+3. 超时则放弃剩余清理强制退出，返回 `bee.ErrShutdownTimeout`。
+
+第 1 步的预算是 `shutdown.timeoutSeconds`，第 2 步另有一份 5 秒的独立预算。清理钩子不跟在途请求抢预算是有意的：一次几十秒的外部调用就能把总预算耗光，共用的话钩子拿到手就是过期的 ctx——最需要清理的那次退出反而什么都清不掉。
+
+关闭卡住时再按一次 `Ctrl+C` 会立刻结束进程——`bee.Run` 在开始关闭时就把信号处理还原成了默认行为。
 
 ## ⚙️ 配置
 
@@ -125,6 +157,10 @@ rds:
     addr: "127.0.0.1:6379"
     password: ""
     db: 0
+
+shutdown:
+  # 等在途请求处理完的预算（秒），不配置时默认 15；清理钩子另有一份 5 秒的独立预算
+  timeoutSeconds: 15
 ```
 
 ## 📂 项目结构
@@ -134,9 +170,11 @@ bee/
 ├── caches/       # 缓存抽象与实现
 ├── config/       # 配置加载逻辑
 ├── dbs/          # 数据库管理 (XORM 封装)
+├── lifecycle/    # 退出清理钩子登记表
 ├── logger/       # 日志封装
 ├── rds/          # Redis 管理
 ├── utils/        # 通用工具函数
+├── app.go        # bee.Run：信号监听与优雅关闭
 ├── context.go    # IContext 接口定义
 ├── handler.go    # 处理器定义
 ├── http_server.go # HTTP 服务实现

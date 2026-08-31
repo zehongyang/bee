@@ -5,6 +5,7 @@ import (
 	"crypto/tls"
 	"encoding/binary"
 	"encoding/json"
+	"errors"
 	"io"
 	"log"
 	"mime/multipart"
@@ -41,6 +42,8 @@ const (
 	defaultReadTimeout              = time.Second * 60
 	defaultWriteTimeout             = time.Second * 10
 	MaxPackageSize                  = 1 << 20
+	// closeIdlePollInterval 是关闭阶段轮询"在途请求是否处理完"的间隔。
+	closeIdlePollInterval = time.Millisecond * 50
 )
 
 type Package struct {
@@ -453,7 +456,8 @@ type TcpServer struct {
 	pool     *sync.Pool
 	mu       sync.Mutex
 	conns    map[*Session]struct{}
-	shutDown bool
+	// shutDown 用原子量：写在 Shutdown 所在的 goroutine，读在每个连接的 serve 循环里。
+	shutDown atomic.Bool
 }
 
 type socketHandler struct {
@@ -467,6 +471,7 @@ type SocketOptions struct {
 	cert         *tls.Certificate
 	certFile     string
 	keyFile      string
+	wsPath       string
 }
 
 func (t *SocketOptions) init() error {
@@ -495,6 +500,16 @@ func WithReadTimeout(readTimeout time.Duration) OptionFun {
 func WithWriteTimeout(writeTimeout time.Duration) OptionFun {
 	return func(o *SocketOptions) {
 		o.writeTimeout = writeTimeout
+	}
+}
+
+// WithWsPath 指定 WebSocket 的握手路径，默认 defaultWsPath。
+//
+// 做成 option 而不是 Run 的第二个参数，是为了让三种 server 的 Run 签名一致，
+// 都能交给 bee.Run 托管。
+func WithWsPath(path string) OptionFun {
+	return func(o *SocketOptions) {
+		o.wsPath = path
 	}
 }
 
@@ -543,7 +558,14 @@ func (s *TcpServer) Run(addr string) error {
 	for {
 		conn, err := s.listener.Accept()
 		if err != nil {
+			// Shutdown 关掉 listener 之后 Accept 必然报错，那是正常退出而不是故障。
+			// 这里还必须 continue：原来出错也照样 go s.serve(conn)，conn 是 nil，
+			// 进去第一步就 panic；listener 一旦关掉更会变成打满 CPU 的空转。
+			if s.shutDown.Load() || errors.Is(err, net.ErrClosed) {
+				return nil
+			}
 			logger.Error().Err(err).Any("addr", s.listener.Addr()).Msg("tcp server accept")
+			continue
 		}
 		go s.serve(conn)
 	}
@@ -579,7 +601,7 @@ func (s *TcpServer) serve(conn net.Conn) {
 			logger.Debug().Err(err).Msg("read data")
 			return
 		}
-		if pkg != nil && !s.shutDown {
+		if pkg != nil && !s.shutDown.Load() {
 			handler, ok := s.handler.handlers[int64(pkg.Fid)]
 			if !ok {
 				logger.Error().Any("fid", pkg.Fid).Msg("not found handler")
@@ -606,18 +628,17 @@ func (s *TcpServer) RegisterLocal(fid int64, h Handler) {
 	s.handler.local[fid] = h
 }
 
-func (s *TcpServer) Shutdown() {
-	err := s.listener.Close()
-	if err != nil {
-		logger.Error().Err(err).Msg("tcp server shutdown")
+// Shutdown 关掉监听端口不再接受新连接，然后等在途请求处理完再断开连接。
+// 关闭预算由 ctx 决定（bee.Run 按 shutdown.timeoutSeconds 给），到期还没处理完的连接会被直接切断。
+func (s *TcpServer) Shutdown(ctx context.Context) error {
+	// 先置标志再关 listener：反过来的话，关闭瞬间刚建立的连接还会被当成正常连接接进来。
+	s.shutDown.Store(true)
+	if s.listener != nil {
+		if err := s.listener.Close(); err != nil && !errors.Is(err, net.ErrClosed) {
+			logger.Error().Err(err).Msg("tcp server close listener")
+		}
 	}
-	s.shutDown = true
-	ctx, cancelFunc := context.WithDeadline(context.Background(), time.Now().Add(time.Second*5))
-	defer cancelFunc()
-	err = s.closeIdle(ctx)
-	if err != nil {
-		logger.Error().Err(err).Msg("tcp server shutdown")
-	}
+	return s.closeIdle(ctx)
 }
 
 func (s *TcpServer) closeIdle(ctx context.Context) error {
@@ -640,6 +661,10 @@ func (s *TcpServer) closeIdle(ctx context.Context) error {
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
+		case <-time.After(closeIdlePollInterval):
+			// 还有连接在处理请求，等一会儿再看一轮。
+			// 原来这里只 select ctx.Done()，只要有一个活跃连接就会一直睡到超时，
+			// 等于把"等在途请求结束"变成了"每次关闭都必然等满整个预算"。
 		}
 	}
 }

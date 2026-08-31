@@ -4,6 +4,7 @@ import (
 	"context"
 	"github.com/redis/go-redis/v9"
 	"github.com/zehongyang/bee/config"
+	"github.com/zehongyang/bee/lifecycle"
 	"github.com/zehongyang/bee/logger"
 	"github.com/zehongyang/bee/utils"
 	"sync"
@@ -75,6 +76,10 @@ func Get(name string) *redis.Client {
 		}
 		globalRd.clients[name] = client
 		rc.client = client
+		// 同 dbs：客户端是惰性建的，关闭动作就地登记，退出时由 bee.Run 统一执行。
+		lifecycle.OnShutdown("rds:"+name, func(ctx context.Context) error {
+			return client.Close()
+		})
 	}
 	return client
 }
