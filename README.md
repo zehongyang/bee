@@ -52,6 +52,17 @@ func main() {
 }
 ```
 
+**客户端 IP 与反向代理**：不做设置时，`ctx.GetIp()` 会采信任何来源的 `X-Forwarded-For`（`gin.Default()` 的默认行为），
+任何人带一个这样的请求头就能冒充任意 IP。凡是用到按 IP 限流或 IP 白名单的服务，启动时都要调 `SetTrustedProxies`：
+
+```go
+server := bee.NewHttpServer()
+// nginx 和服务在同一台机器上就填 127.0.0.1；直接对外监听就传 nil，谁的 X-Forwarded-For 都不信
+if err := server.SetTrustedProxies([]string{"127.0.0.1"}); err != nil {
+    logger.Fatal().Err(err).Msg("trusted proxies 配置不合法")
+}
+```
+
 ### 2. WebSocket 服务
 
 ```go
