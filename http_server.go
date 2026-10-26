@@ -225,6 +225,18 @@ func NewHttpServer() *HttpServer {
 	}
 }
 
+// SetTrustedProxies 指定哪些上游代理（例如同机的 nginx）转发来的 X-Forwarded-For / X-Real-IP 可信。
+//
+// gin.Default() 默认信任所有来源，任何客户端自己带一个 X-Forwarded-For 头，GetIp 拿到的
+// 就是它编的地址——按 IP 限流和 IP 白名单都会被一行请求头绕过去。传空切片表示谁都不信，
+// GetIp 返回 TCP 连接的对端地址。必须在注册路由、启动监听之前调用。
+func (s *HttpServer) SetTrustedProxies(proxies []string) error {
+	if proxies == nil {
+		proxies = []string{}
+	}
+	return s.engine.SetTrustedProxies(proxies)
+}
+
 // ServeHTTP 让 HttpServer 满足标准库的 http.Handler，可以直接交给 httptest 驱动，
 // 不必真的占一个端口。优雅关闭走 Shutdown，不需要再套一层外部 http.Server。
 func (s *HttpServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
