@@ -29,8 +29,14 @@ type RouterGroup struct {
 	*gin.RouterGroup
 }
 
+// Bind 按 Content-Type 把请求体解析进 obj，失败只返回错误、不写任何响应，由调用方用 ResponseError 回包。
+//
+// 刻意用 gin 的 ShouldBind 而不是 Bind：gin 的 Bind 在解析失败时会立刻写出 HTTP 400，
+// 状态行一旦发出，调用方随后 ResponseError 设置的 Code / Error 头就再也发不出去——
+// 客户端收到的是一个没有 Code 头的 400，和本框架“HTTP 恒为 200、成败看 Code 头”的约定相冲突。
+// BindHeader、BindUri 同理。
 func (c *HttpContext) Bind(obj any) error {
-	return c.ctx.Bind(obj)
+	return c.ctx.ShouldBind(obj)
 }
 
 func (c *HttpContext) GetAccount() AccountInfo {
@@ -140,7 +146,7 @@ func (c *HttpContext) GetHeader(key string) string {
 }
 
 func (c *HttpContext) BindHeader(obj any) error {
-	return c.ctx.BindHeader(obj)
+	return c.ctx.ShouldBindHeader(obj)
 }
 
 // GetRawBody 读出整个请求体并把它塞回 Request.Body，让后续的 Bind 仍然能正常工作。
@@ -161,7 +167,7 @@ func (c *HttpContext) GetRawBody() ([]byte, error) {
 }
 
 func (c *HttpContext) BindUri(obj any) error {
-	return c.ctx.BindUri(obj)
+	return c.ctx.ShouldBindUri(obj)
 }
 
 func (c *HttpContext) GetMethod() string {
