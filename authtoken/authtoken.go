@@ -78,6 +78,24 @@ func (s *Store) Verify(token string) (int64, error) {
 	return uid, nil
 }
 
+// Refresh 把本命名空间下 token 的剩余有效期重新设为 ttl，用来做滑动过期（"多久没用才过期"）：
+// 每次校验通过后调一次，常用的登录态就不会到期。
+// token 为空、不存在或已过期时返回 ErrInvalidToken——已经失效的 token 不会被续活。
+func (s *Store) Refresh(token string, ttl time.Duration) error {
+	if token == "" {
+		return ErrInvalidToken
+	}
+	client := rds.Get(s.rdsName)
+	ok, err := client.Expire(context.Background(), s.key(token), ttl).Result()
+	if err != nil {
+		return err
+	}
+	if !ok {
+		return ErrInvalidToken
+	}
+	return nil
+}
+
 // Revoke 让本命名空间下的指定 token 立即失效；token 不存在时视为成功。
 func (s *Store) Revoke(token string) error {
 	if token == "" {
