@@ -5,6 +5,7 @@ import (
 	"net/http/httptest"
 	"strconv"
 	"testing"
+	"time"
 
 	"github.com/zehongyang/bee"
 )
@@ -54,7 +55,14 @@ func TestStoreVerifyRejectsEmptyToken(t *testing.T) {
 	}
 }
 
-// TestStoreRevokeEmptyTokenIsNoop 验证登出一个空 token 视为成功，登出接口应当幂等。
+// TestStoreRefreshRejectsEmptyToken 验证续期空 token 直接返回 ErrInvalidToken，不会去连 Redis。
+func TestStoreRefreshRejectsEmptyToken(t *testing.T) {
+	if err := New("default", "admin").Refresh("", time.Hour); err != ErrInvalidToken {
+		t.Fatalf("expected ErrInvalidToken for an empty token, got %v", err)
+	}
+}
+
+// TestStoreRevokeEmptyTokenIsNoop验证登出一个空 token 视为成功，登出接口应当幂等。
 func TestStoreRevokeEmptyTokenIsNoop(t *testing.T) {
 	if err := New("default", "admin").Revoke(""); err != nil {
 		t.Fatalf("expected revoking an empty token to be a no-op, got %v", err)
